@@ -1,0 +1,139 @@
+---
+title: "Omics Assignment 1"
+output: html_document
+date: "2025-08-25"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Setup the Seurat Object
+
+```{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+
+# Load the PBMC dataset
+pbmc.data <- Read10X(data.dir = "/home/kostispat/Documents/Omics/Omics_Assignments/Assignment1/filtered_gene_bc_matrices/hg19/")
+# Initialize the Seurat object with the raw (non-normalized data).
+pbmc <- CreateSeuratObject(counts = pbmc.data, project = "pbmc3k", min.cells = 3, min.features = 200)
+pbmc
+```
+
+# Standard Pre-Processing Workflow
+
+```{r}
+# Add Metadata (Mitochondria count as an index of dying cells)
+pbmc[["percent.mt"]] <- PercentageFeatureSet(pbmc, pattern = "^MT-")
+# Visualize QC metrics as a violin plot
+VlnPlot(pbmc, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+# Filter cells
+pbmc <- subset(pbmc, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
+```
+
+# Normalizing the Data
+
+```{r}
+pbmc <- NormalizeData(pbmc, normalization.method = "LogNormalize", scale.factor = 10000)
+```
+
+# Identification of highly variable features (feature selection)
+
+```{r}
+pbmc <- FindVariableFeatures(pbmc, selection.method = "vst", nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(pbmc), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(pbmc)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot1 + plot2
+```
+
+# Scaling the data
+
+```{r}
+all.genes <- rownames(pbmc)
+pbmc <- ScaleData(pbmc, features = all.genes)
+```
+
+# Perform linear dimensional reduction
+
+```{r}
+pbmc <- RunPCA(pbmc, features = VariableFeatures(object = pbmc))
+print(pbmc[["pca"]], dims = 1:5, nfeatures = 5)
+```
+
+# Determine the ‘dimensionality’ of the dataset
+
+```{r}
+ElbowPlot(pbmc)
+```
+
+# Dimensional reduction with different PC parameters
+
+```{r}
+# UMAP with PCs = 5, 10, 15
+pbmc_5  <- RunUMAP(pbmc, dims = 1:5)
+pbmc_10 <- RunUMAP(pbmc, dims = 1:10)
+pbmc_15 <- RunUMAP(pbmc, dims = 1:15)
+
+# Visualize
+# Visualize
+DimPlot(pbmc_5, reduction = "umap") + ggtitle("UMAP with 5 PCs")
+DimPlot(pbmc_10, reduction = "umap") + ggtitle("UMAP with 10 PCs")
+DimPlot(pbmc_15, reduction = "umap") + ggtitle("UMAP with 15 PCs")
+```
+
+# Clustering with different resolution parameters
+
+```{r}
+# Neighbor graph on 10 PCs
+pbmc <- FindNeighbors(pbmc, dims = 1:10)
+
+# Run UMAP once (embedding will be stored in pbmc@reductions$umap)
+pbmc <- RunUMAP(pbmc, dims = 1:10)
+
+# Now try different resolutions
+pbmc_res03 <- FindClusters(pbmc, resolution = 0.3)
+pbmc_res05 <- FindClusters(pbmc, resolution = 0.5)
+pbmc_res08 <- FindClusters(pbmc, resolution = 0.8)
+
+# UMAP plots
+DimPlot(pbmc_res03, reduction = "umap", label = TRUE) + labs(title = "Resolution 0.3")
+DimPlot(pbmc_res05, reduction = "umap", label = TRUE) + labs(title = "Resolution 0.5")
+DimPlot(pbmc_res08, reduction = "umap", label = TRUE) + labs(title = "Resolution 0.8")
+```
+
+# Finding differentially expressed features (cluster biomarkers)
+
+```{r}
+# For PC=10 and resolution=0.3
+Idents(pbmc_res03) <- "seurat_clusters"
+markers_res03 <- FindAllMarkers(pbmc_res03, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+# Save markers list as tab-delimited text
+write.table(markers_res03, file = "markers_pc10_res03.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+```
+
+# Feature plots of selected genes
+
+```{r featureplots, fig.width=12, fig.height=4, echo=TRUE}
+library(Seurat)
+library(patchwork)  # for arranging multiple plots
+
+# Genes to plot
+genes_to_plot <- c("CCL5", "MS4A1", "SEPT5")
+
+# Generate feature plots
+feature_plots <- lapply(genes_to_plot, function(g){
+  FeaturePlot(pbmc_res03, features = g) + labs(title = g)
+})
+
+# Arrange plots side by side
+wrap_plots(feature_plots, ncol = length(feature_plots))
+```
