@@ -1,0 +1,1 @@
+Assignment_Rmd can NOT be run to output the necessary results without the necessary input files, but the exported markers list ( tab delimited (.txt))  of clusters I found for the PC 10 and resolution 0.3 is included in the repository, while the featureplots of CCL5, MS4A1, SEPT5 are visible at the very end of the knitted html file.
